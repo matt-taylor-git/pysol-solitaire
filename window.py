@@ -108,23 +108,29 @@ class SolitaireWindow(QMainWindow):
             }
         """
 
-        undo_button = QPushButton("Undo")
-        hint_button = QPushButton("Hint")
-        shuffle_button = QPushButton("Shuffle")
-        daily_button = QPushButton("Daily")
-        settings_button = QPushButton("Settings")
-        play_button = QPushButton("Play")
+        undo_button = QPushButton()
+        hint_button = QPushButton()
+        shuffle_button = QPushButton()
+        daily_button = QPushButton()
+        settings_button = QPushButton()
+        play_button = QPushButton()
 
         for b in [undo_button, hint_button, shuffle_button, daily_button, settings_button, play_button]:
             b.setStyleSheet(button_style)
 
-        # Add icons from Qt standard pixmaps
+        # Add icons from Qt standard pixmaps and tooltips
         undo_button.setIcon(self.style().standardIcon(QStyle.SP_ArrowBack))
+        undo_button.setToolTip("Undo")
         hint_button.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxQuestion))
+        hint_button.setToolTip("Hint")
         shuffle_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        daily_button.setIcon(self.style().standardIcon(QStyle.SP_FileLinkIcon))  # or SP_DatePickerDateLineEdit
+        shuffle_button.setToolTip("Shuffle")
+        daily_button.setIcon(self.style().standardIcon(QStyle.SP_FileLinkIcon))
+        daily_button.setToolTip("Daily")
         settings_button.setIcon(self.style().standardIcon(QStyle.SP_CommandLink))
+        settings_button.setToolTip("Settings")
         play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+        play_button.setToolTip("Play")
 
         bottom_bar_layout.addWidget(undo_button)
         bottom_bar_layout.addWidget(hint_button)
