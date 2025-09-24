@@ -7,11 +7,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QGraphicsView,
     QGraphicsScene,
+    QStyle,
 )
 from PySide6.QtGui import (
     QColor,
     QPalette,
     QPen,
+    QIcon,
 )
 from PySide6.QtCore import (
     Qt,
@@ -115,6 +117,14 @@ class SolitaireWindow(QMainWindow):
 
         for b in [undo_button, hint_button, shuffle_button, daily_button, settings_button, play_button]:
             b.setStyleSheet(button_style)
+
+        # Add icons from Qt standard pixmaps
+        undo_button.setIcon(self.style().standardIcon(QStyle.SP_ArrowBack))
+        hint_button.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxQuestion))
+        shuffle_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        daily_button.setIcon(self.style().standardIcon(QStyle.SP_FileLinkIcon))  # or SP_DatePickerDateLineEdit
+        settings_button.setIcon(self.style().standardIcon(QStyle.SP_CommandLink))
+        play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
 
         bottom_bar_layout.addWidget(undo_button)
         bottom_bar_layout.addWidget(hint_button)
