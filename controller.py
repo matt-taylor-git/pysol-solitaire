@@ -381,20 +381,8 @@ class GameController(QObject):
 
 
     def _find_target_pile(self, pt: QPointF, prefer_tableau=True) -> Optional[Pile]:
-        candidates = [p for p in self.all_piles if p.kind != "stock" and p.placeholder.sceneBoundingRect().adjusted(-8, -8, 8, 8).contains(pt)]
+        candidates = [p for p in self.all_piles if p.kind != "stock" and p.placeholder.sceneBoundingRect().contains(pt)]
         if not candidates:
-            # If not inside any rect, try nearest tableau by x-distance for lenient dropping
-            if prefer_tableau:
-                # choose tableau with closest x
-                min_dx = 1e9
-                best = None
-                for p in self.tableau:
-                    cx = p.placeholder.sceneBoundingRect().center().x()
-                    dx = abs(cx - pt.x())
-                    if dx < min_dx:
-                        min_dx = dx
-                        best = p
-                return best
             return None
         # If multiple, prefer tableau over foundation/waste
         if prefer_tableau:
@@ -404,21 +392,13 @@ class GameController(QObject):
         return candidates[0]
 
     def _animate_layout(self, piles: List[Pile]):
-        anim = QParallelAnimationGroup()
         for p in piles:
-            p.layout_cards(animate=True, anim_group=anim)
-        anim.start(QParallelAnimationGroup.DeleteWhenStopped)
+            p.layout_cards(animate=False, anim_group=None)
 
     def _animate_revert(self, cards: List[CardItem], start_positions: List[QPointF]):
-        # Revert dragged cards to their original positions
-        anim = QParallelAnimationGroup()
+        # Instantly revert dragged cards to their original positions
         for c, start in zip(cards, start_positions):
-            a = QPropertyAnimation(c, b"pos")
-            a.setDuration(200)
-            a.setEasingCurve(QEasingCurve.OutCubic)
-            a.setEndValue(start)
-            anim.addAnimation(a)
-        anim.start(QParallelAnimationGroup.DeleteWhenStopped)
+            c.setPos(start)
 
     # ---------------- Button hooks ----------------
 
