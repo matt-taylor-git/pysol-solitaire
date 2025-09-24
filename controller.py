@@ -381,7 +381,26 @@ class GameController(QObject):
 
 
     def _find_target_pile(self, pt: QPointF, prefer_tableau=True) -> Optional[Pile]:
-        candidates = [p for p in self.all_piles if p.kind != "stock" and p.placeholder.sceneBoundingRect().contains(pt)]
+        candidates = []
+        for p in self.all_piles:
+            if p.kind == "stock":
+                continue
+            if p.kind == "tableau":
+                # Expanded drop zone for tableau: covers full stack height
+                x = p.anchor.x()
+                y = p.anchor.y()
+                w = self.card_width
+                if len(p.cards) == 0:
+                    h = self.card_height
+                else:
+                    h = (len(p.cards) - 1) * p.spacing_y + self.card_height
+                drop_rect = QRectF(x, y, w, h)
+                if drop_rect.contains(pt):
+                    candidates.append(p)
+            else:
+                # Foundation/waste: standard placeholder rect
+                if p.placeholder.sceneBoundingRect().contains(pt):
+                    candidates.append(p)
         if not candidates:
             return None
         # If multiple, prefer tableau over foundation/waste
