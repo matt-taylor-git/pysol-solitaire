@@ -96,15 +96,23 @@ class SolitaireWindow(QMainWindow):
 
         button_style = """
             QPushButton {
-                background-color: #1976D2;
+                background-color: rgba(255, 255, 255, 0.12);
                 color: white;
                 font-size: 16px;
-                padding: 10px 16px;
-                border-radius: 14px;
-                border: 1px solid #FFFFFF;
+                padding: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                icon-size: 32px;
+                min-width: 64px;
+                min-height: 64px;
             }
             QPushButton:hover {
-                background-color: #0F5CAD;
+                background-color: rgba(255, 255, 255, 0.2);
+                border-color: rgba(255, 255, 255, 0.5);
+            }
+            QPushButton:pressed {
+                background-color: rgba(255, 255, 255, 0.3);
+                border-color: rgba(255, 255, 255, 0.7);
             }
         """
 
