@@ -2,7 +2,7 @@ import os
 import random
 from typing import List, Optional
 
-from PySide6.QtWidgets import QGraphicsView
+from PySide6.QtWidgets import QGraphicsView, QGraphicsTextItem
 from PySide6.QtCore import (
     QObject,
     Signal,
@@ -13,7 +13,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     Qt,
 )
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QPainter, QFont
 
 from constants import (
     SUITS, RANKS, CARD_ASPECT, TOP_MARGIN, SIDE_MARGIN, PILE_GAP_X, PILE_GAP_Y,
@@ -264,6 +264,7 @@ class GameController(QObject):
         print("DEBUG: Starting new game...")
         print("DEBUG: ====================")
         self.clear_scene()
+        self.won = False
         self.setup_piles()
         self.build_deck()
         self.deal()
@@ -372,6 +373,7 @@ class GameController(QObject):
             # Accept drop
             target.add_cards(old_group)
             self._animate_layout([src_pile, target])
+            self.check_win()
             # Auto-flip new top card of a tableau if it was face-down
             if src_pile.kind == "tableau" and src_pile.top_card() and not src_pile.top_card().is_face_up():
                 src_pile.top_card().set_face_up(True)
@@ -419,6 +421,29 @@ class GameController(QObject):
         for c, start in zip(cards, start_positions):
             c.setPos(start)
 
+    def check_win(self):
+        if self.won:
+            return
+        if all(len(f.cards) == 13 for f in self.foundations):
+            self.won = True
+            self.show_celebration()
+
+    def show_celebration(self):
+        text_item = QGraphicsTextItem("🎉 You Win! 🎉")
+        text_item.setFont(QFont("Arial", 48, QFont.Bold))
+        text_item.setDefaultTextColor(Qt.white)
+        scene_center = self.scene.sceneRect().center()
+        text_item.setPos(scene_center - QPointF(text_item.boundingRect().center()))
+        text_item.setOpacity(0.0)
+        self.scene.addItem(text_item)
+
+        anim = QPropertyAnimation(text_item, b"opacity")
+        anim.setDuration(2000)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.start(QParallelAnimationGroup.DeleteWhenStopped)
+
     # ---------------- Button hooks ----------------
 
     def on_shuffle_clicked(self):
@@ -440,6 +465,7 @@ class GameController(QObject):
                     c.current_pile = self.stock
                 self.stock.add_cards(moving)
                 self._animate_layout([self.stock, self.waste])
+                self.check_win()
             return
 
         card = self.stock.cards.pop()  # take top visually
@@ -448,3 +474,4 @@ class GameController(QObject):
         self.waste.add_cards([card])
         card.set_face_up(True)
         self._animate_layout([self.stock, self.waste])
+        self.check_win()
