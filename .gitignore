@@ -8,3 +8,4 @@ venv/
 pysol_venv/
 .venv/
 .vscode/settings.json
+.DS_Store

@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from PySide6.QtWidgets import QGraphicsObject, QGraphicsRectItem, QGraphicsDropShadowEffect
 from PySide6.QtGui import (
@@ -16,6 +16,10 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtSvg import QSvgRenderer
+from models import Pile
+
+if TYPE_CHECKING:
+    from controller import GameController
 
 
 class PlaceholderItem(QGraphicsRectItem):

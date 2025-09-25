@@ -1,6 +1,6 @@
 import os
 import random
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import QGraphicsView, QGraphicsTextItem
 from PySide6.QtCore import (
@@ -22,6 +22,11 @@ from constants import (
 )
 from models import Pile
 from card import CardItem, PlaceholderItem
+from window import SolitaireWindow
+
+if TYPE_CHECKING:
+    # Type hints only - these are already imported above for runtime
+    pass
 
 
 class GameController(QObject):

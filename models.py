@@ -1,6 +1,10 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from PySide6.QtCore import QPointF, QRectF, QPropertyAnimation, QEasingCurve
+
+if TYPE_CHECKING:
+    from card import CardItem, PlaceholderItem
+    from PySide6.QtCore import QParallelAnimationGroup
 
 
 @dataclass
