@@ -27,7 +27,7 @@ class SolitaireWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Klondike Solitaire")
-        self.setGeometry(100, 100, 1100, 800)
+        self.setGeometry(100, 100, 1200, 900)
 
         # Felt green background (slight gradient via palette + scene transparency)
         palette = self.palette()
@@ -58,13 +58,19 @@ class SolitaireWindow(QMainWindow):
         # Controller (needs to be before bottom bar for button connections)
         from controller import GameController  # Import here to avoid circular
         self.controller = GameController(self)
-        self.controller.new_game()  # Start a new game on window open
+        self._initial_game_started = False
 
         # Bottom bar
         self._create_bottom_bar(main_layout)
 
         # Clickable stock area: intercept mouse presses on scene
         self.game_scene.mousePressEvent = self._scene_mouse_press_wrapper(self.game_scene.mousePressEvent)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._initial_game_started:
+            self.controller.new_game()
+            self._initial_game_started = True
 
     def _create_top_bar(self, parent_layout):
         top_bar_widget = QWidget()
@@ -136,7 +142,7 @@ class SolitaireWindow(QMainWindow):
         daily_button.setIcon(self.style().standardIcon(QStyle.SP_FileLinkIcon))
         daily_button.setToolTip("Daily")
         settings_button.setIcon(self.style().standardIcon(QStyle.SP_CommandLink))
-        settings_button.setToolTip("Settings")
+        settings_button.setToolTip("Debug: Force Win")
         play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         play_button.setToolTip("Play")
 
@@ -157,7 +163,7 @@ class SolitaireWindow(QMainWindow):
         undo_button.clicked.connect(lambda: None)
         hint_button.clicked.connect(lambda: None)
         daily_button.clicked.connect(lambda: None)
-        settings_button.clicked.connect(lambda: None)
+        settings_button.clicked.connect(self.controller.on_force_win_clicked)
 
     def _scene_mouse_press_wrapper(self, original_handler):
         # Wrap the scene's mousePressEvent to detect clicks on stock placeholder

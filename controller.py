@@ -10,6 +10,7 @@ from PySide6.QtCore import (
     QRectF,
     QParallelAnimationGroup,
     QPropertyAnimation,
+    QSequentialAnimationGroup,
     QEasingCurve,
     Qt,
 )
@@ -41,6 +42,8 @@ class GameController(QObject):
         self.all_piles: List[Pile] = []
 
         self.deck: List[CardItem] = []  # undealt cards
+        self._win_animation: Optional[QPropertyAnimation] = None
+        self._win_text_item: Optional[QGraphicsTextItem] = None
         self._wire_view_resize()
 
     def _wire_view_resize(self):
@@ -85,6 +88,14 @@ class GameController(QObject):
         self.card_height = self.card_width * CARD_ASPECT
 
     def clear_scene(self):
+        # Stop win animation and remove text
+        if self._win_animation:
+            self._win_animation.stop()
+            self._win_animation = None
+        if self._win_text_item:
+            self.scene.removeItem(self._win_text_item)
+            self._win_text_item = None
+
         # Remove all items except persistent UI
         for item in list(self.scene.items()):
             if isinstance(item, (PlaceholderItem, CardItem)):
@@ -373,6 +384,7 @@ class GameController(QObject):
             # Accept drop
             target.add_cards(old_group)
             self._animate_layout([src_pile, target])
+            print(f"DEBUG: Accepted drop to {target.kind}, calling check_win")
             self.check_win()
             # Auto-flip new top card of a tableau if it was face-down
             if src_pile.kind == "tableau" and src_pile.top_card() and not src_pile.top_card().is_face_up():
@@ -424,25 +436,51 @@ class GameController(QObject):
     def check_win(self):
         if self.won:
             return
+        print(f"DEBUG: Check win, foundations: {[len(f.cards) for f in self.foundations]}")
         if all(len(f.cards) == 13 for f in self.foundations):
+            print("DEBUG: Win condition met!")
             self.won = True
             self.show_celebration()
 
     def show_celebration(self):
-        text_item = QGraphicsTextItem("🎉 You Win! 🎉")
-        text_item.setFont(QFont("Arial", 48, QFont.Bold))
-        text_item.setDefaultTextColor(Qt.white)
-        scene_center = self.scene.sceneRect().center()
-        text_item.setPos(scene_center - QPointF(text_item.boundingRect().center()))
-        text_item.setOpacity(0.0)
-        self.scene.addItem(text_item)
+        self._win_text_item = QGraphicsTextItem("🎉 You Win! 🎉")
+        self._win_text_item.setFont(QFont("Arial", 48, QFont.Bold))
+        self._win_text_item.setDefaultTextColor(Qt.white)
+        self._win_text_item.setZValue(1000)  # On top of everything
 
-        anim = QPropertyAnimation(text_item, b"opacity")
-        anim.setDuration(2000)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.start(QParallelAnimationGroup.DeleteWhenStopped)
+        # Center horizontally, position vertically above cards
+        scene_rect = self.scene.sceneRect()
+        text_rect = self._win_text_item.boundingRect()
+        x = scene_rect.center().x() - text_rect.center().x()
+        y = TOP_MARGIN  # Position it at the top margin
+        self._win_text_item.setPos(x, y)
+
+        self._win_text_item.setScale(1.0)
+        self._win_text_item.setOpacity(1.0)
+        self.scene.addItem(self._win_text_item)
+
+        # Animate a repeating pulse
+        anim_group = QParallelAnimationGroup()
+        
+        scale_up = QPropertyAnimation(self._win_text_item, b"scale")
+        scale_up.setDuration(700)
+        scale_up.setStartValue(1.0)
+        scale_up.setEndValue(1.1)
+        scale_up.setEasingCurve(QEasingCurve.InOutQuad)
+
+        scale_down = QPropertyAnimation(self._win_text_item, b"scale")
+        scale_down.setDuration(700)
+        scale_down.setStartValue(1.1)
+        scale_down.setEndValue(1.0)
+        scale_down.setEasingCurve(QEasingCurve.InOutQuad)
+        
+        seq = QSequentialAnimationGroup()
+        seq.addAnimation(scale_up)
+        seq.addAnimation(scale_down)
+        seq.setLoopCount(-1) # Loop forever
+        
+        self._win_animation = seq
+        self._win_animation.start()
 
     # ---------------- Button hooks ----------------
 
@@ -474,4 +512,22 @@ class GameController(QObject):
         self.waste.add_cards([card])
         card.set_face_up(True)
         self._animate_layout([self.stock, self.waste])
+        self.check_win()
+
+    def on_force_win_clicked(self):
+        # Debug: Force fill foundations with full suits
+        suits = SUITS[:4]  # clubs, diamonds, hearts, spades
+        for i, f in enumerate(self.foundations):
+            suit = suits[i]
+            # Cards from ace to king
+            for r in RANKS:
+                path = svg_path_for(suit, r)
+                if not os.path.exists(path):
+                    continue
+                c = CardItem(suit, r, path, self, face_up=True)
+                c.set_size(self.card_width)
+                c.current_pile = f
+                f.add_cards([c])
+                self.scene.addItem(c)
+            self._animate_layout([f])
         self.check_win()
