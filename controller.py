@@ -48,12 +48,16 @@ class GameController(QObject):
         self.all_piles: List[Pile] = []
 
         self.deck: List[CardItem] = []  # undealt cards
+        self.won = False
         self._win_animation: Optional[QPropertyAnimation] = None
         self._win_text_item: Optional[QGraphicsTextItem] = None
         self._undo_stack: List[Dict[str, Any]] = []
         self._move_count = 0
         self._hint_cards: List[CardItem] = []
         self._hint_piles: List[Pile] = []
+        self._auto_finishing = False
+        self._auto_finish_animation: Optional[QPropertyAnimation] = None
+        self._auto_finish_safety_steps = 0
         self._wire_view_resize()
 
     def _wire_view_resize(self):
@@ -99,6 +103,7 @@ class GameController(QObject):
 
     def clear_scene(self):
         self._clear_hint_highlight()
+        self._stop_auto_finish(update_button=False)
 
         # Stop win animation and remove text
         if self._win_animation:
@@ -282,6 +287,8 @@ class GameController(QObject):
     # ---------------- Interactions ----------------
 
     def new_game(self):
+        if self._auto_finishing:
+            return
         # Clear scene, piles, build deck, deal
         print("\nDEBUG: ====================")
         print("DEBUG: Starting new game...")
@@ -293,6 +300,7 @@ class GameController(QObject):
         self.setup_piles()
         self.build_deck()
         self.deal()
+        self.update_auto_finish_button()
         print("DEBUG: New game setup complete.")
 
     def highlight_drop_targets(self, on: bool):
@@ -310,6 +318,9 @@ class GameController(QObject):
         - any face-up card in tableau, along with all face-up cards stacked above it in valid sequence
         - top card of a foundation
         """
+        if self._auto_finishing:
+            return []
+
         pile = card.current_pile
         if pile is None:
             return []
@@ -375,6 +386,9 @@ class GameController(QObject):
         Resolve drop target and animate group to destination, or revert.
         Rules are now enforced via _can_stack_on.
         """
+        if self._auto_finishing:
+            return
+
         src_pile = card.current_pile
         if src_pile is None:
             return
@@ -410,6 +424,7 @@ class GameController(QObject):
             self._register_move(snapshot)
             print(f"DEBUG: Accepted drop to {target.kind}, calling check_win")
             self.check_win()
+            self.update_auto_finish_button()
         else:
             # Revert
             self._animate_revert(group, start_positions)
@@ -462,7 +477,158 @@ class GameController(QObject):
         if all(len(f.cards) == 13 for f in self.foundations):
             print("DEBUG: Win condition met!")
             self.won = True
+            self.update_auto_finish_button()
             self.show_celebration()
+
+    # ---------------- Auto finish ----------------
+
+    def is_auto_finish_eligible(self) -> bool:
+        if self.won or self._auto_finishing or not self.tableau:
+            return False
+        return all(card.is_face_up() for pile in self.tableau for card in pile.cards)
+
+    def update_auto_finish_button(self):
+        button = getattr(self.window, "auto_finish_button", None)
+        if not button:
+            return
+
+        show_button = self.is_auto_finish_eligible()
+        was_visible = button.isVisible()
+        button.setVisible(show_button)
+        button.setEnabled(show_button)
+        if show_button and not was_visible:
+            self.window.statusBar().showMessage("All tableau cards are face-up. Auto Finish is available.", 2600)
+
+    def on_auto_finish_clicked(self):
+        if not self.is_auto_finish_eligible():
+            self.update_auto_finish_button()
+            return
+
+        self._clear_hint_highlight()
+        self._auto_finishing = True
+        self._auto_finish_safety_steps = 0
+        self.update_auto_finish_button()
+        self._set_player_controls_enabled(False)
+        self.window.statusBar().showMessage("Auto finishing...", 1800)
+        QTimer.singleShot(80, self._run_next_auto_finish_step)
+
+    def _set_player_controls_enabled(self, enabled: bool):
+        for name in ("new_game_button", "undo_button", "hint_button", "draw_stock_button"):
+            button = getattr(self.window, name, None)
+            if button:
+                button.setEnabled(enabled)
+
+    def _stop_auto_finish(self, update_button: bool = True):
+        if self._auto_finish_animation:
+            self._auto_finish_animation.stop()
+            self._auto_finish_animation = None
+        self._auto_finishing = False
+        self._auto_finish_safety_steps = 0
+        self._set_player_controls_enabled(True)
+        if update_button:
+            self.update_auto_finish_button()
+
+    def _finish_auto_finish_success(self):
+        self._auto_finishing = False
+        self._auto_finish_animation = None
+        self._auto_finish_safety_steps = 0
+        self._set_player_controls_enabled(True)
+        self.update_auto_finish_button()
+        self.check_win()
+
+    def _finish_auto_finish_stuck(self):
+        self._auto_finishing = False
+        self._auto_finish_animation = None
+        self._set_player_controls_enabled(True)
+        self.update_auto_finish_button()
+        self.window.statusBar().showMessage("Auto Finish paused: no legal foundation move is available.", 2600)
+
+    def _run_next_auto_finish_step(self):
+        if not self._auto_finishing:
+            return
+
+        if all(len(f.cards) == 13 for f in self.foundations):
+            self._finish_auto_finish_success()
+            return
+
+        self._auto_finish_safety_steps += 1
+        if self._auto_finish_safety_steps > 500:
+            self._finish_auto_finish_stuck()
+            return
+
+        move = self._find_auto_foundation_move()
+        if move:
+            source, card, foundation = move
+            self._auto_finish_safety_steps = 0
+            self._animate_auto_foundation_move(source, card, foundation)
+            return
+
+        if self._auto_draw_or_recycle_stock():
+            QTimer.singleShot(80, self._run_next_auto_finish_step)
+            return
+
+        self._finish_auto_finish_stuck()
+
+    def _find_auto_foundation_move(self):
+        sources = []
+        if self.waste and self.waste.top_card():
+            sources.append((self.waste, self.waste.top_card()))
+        sources.extend((pile, pile.top_card()) for pile in self.tableau if pile.top_card())
+
+        for source, card in sources:
+            if not card or not card.is_face_up():
+                continue
+            for foundation in self.foundations:
+                if self._can_stack_on(card, foundation):
+                    return source, card, foundation
+        return None
+
+    def _animate_auto_foundation_move(self, source: Pile, card: CardItem, foundation: Pile):
+        if source.top_card() is not card:
+            self._finish_auto_finish_stuck()
+            return
+
+        source.cards.pop()
+        foundation.add_cards([card])
+        self._animate_layout([source])
+
+        target = foundation.anchor + QPointF(0, (len(foundation.cards) - 1) * foundation.spacing_y)
+        card.setZValue(20000)
+        anim = QPropertyAnimation(card, b"pos")
+        anim.setDuration(170)
+        anim.setEasingCurve(QEasingCurve.InOutQuad)
+        anim.setStartValue(card.pos())
+        anim.setEndValue(target)
+
+        def finish_move():
+            foundation.layout_cards(animate=False, anim_group=None)
+            self._auto_finish_animation = None
+            QTimer.singleShot(45, self._run_next_auto_finish_step)
+
+        anim.finished.connect(finish_move)
+        self._auto_finish_animation = anim
+        anim.start()
+
+    def _auto_draw_or_recycle_stock(self) -> bool:
+        if self.stock and self.stock.cards:
+            card = self.stock.cards.pop()
+            card.current_pile = self.waste
+            card.set_face_up(True)
+            self.waste.add_cards([card])
+            self._animate_layout([self.stock, self.waste])
+            return True
+
+        if self.stock and self.waste and self.waste.cards:
+            moving = list(reversed(self.waste.cards))
+            self.waste.cards.clear()
+            for card in moving:
+                card.set_face_up(False)
+                card.current_pile = self.stock
+            self.stock.add_cards(moving)
+            self._animate_layout([self.stock, self.waste])
+            return True
+
+        return False
 
     def show_celebration(self):
         self._win_text_item = QGraphicsTextItem("🎉 You Win! 🎉")
@@ -537,6 +703,7 @@ class GameController(QObject):
         self._set_move_count(snapshot["move_count"])
         self._animate_layout([p for p in self.all_piles if p is not None])
         self.check_win()
+        self.update_auto_finish_button()
 
     def _register_move(self, snapshot: Dict[str, Any]):
         self._undo_stack.append(snapshot)
@@ -623,6 +790,9 @@ class GameController(QObject):
         self.new_game()
 
     def on_undo_clicked(self):
+        if self._auto_finishing:
+            self.window.statusBar().showMessage("Undo is disabled during Auto Finish.", 1800)
+            return
         if not self._undo_stack:
             self.window.statusBar().showMessage("Nothing to undo.", 1800)
             return
@@ -630,6 +800,8 @@ class GameController(QObject):
         self._restore_snapshot(snapshot)
 
     def on_hint_clicked(self):
+        if self._auto_finishing:
+            return
         hint = self._legal_foundation_hint() or self._legal_tableau_hint() or self._stock_hint()
         if hint:
             cards, target, message = hint
@@ -638,6 +810,8 @@ class GameController(QObject):
             self.window.statusBar().showMessage("No legal moves found.", 1800)
 
     def on_stock_clicked(self):
+        if self._auto_finishing:
+            return
         # Draw one from stock to waste with flip animation (Phase 1)
         if not self.stock or not self.stock.cards:
             # If stock empty, recycle waste back to stock face-down (Phase 1 UX)
@@ -652,6 +826,7 @@ class GameController(QObject):
                 self._animate_layout([self.stock, self.waste])
                 self._register_move(snapshot)
                 self.check_win()
+                self.update_auto_finish_button()
             return
 
         snapshot = self._make_undo_snapshot()
@@ -663,6 +838,7 @@ class GameController(QObject):
         self._animate_layout([self.stock, self.waste])
         self._register_move(snapshot)
         self.check_win()
+        self.update_auto_finish_button()
 
     def on_force_win_clicked(self):
         # Debug: Force fill foundations with full suits

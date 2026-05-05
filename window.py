@@ -120,10 +120,11 @@ class SolitaireWindow(QMainWindow):
             }
         """
 
-        undo_button = QPushButton()
-        hint_button = QPushButton()
-        new_game_button = QPushButton()
-        draw_stock_button = QPushButton()
+        self.undo_button = QPushButton()
+        self.hint_button = QPushButton()
+        self.new_game_button = QPushButton()
+        self.auto_finish_button = QPushButton("Auto\nFinish")
+        self.draw_stock_button = QPushButton()
 
         icons_dir = Path(__file__).resolve().parent / "assets" / "icons"
 
@@ -134,27 +135,37 @@ class SolitaireWindow(QMainWindow):
             button.setToolTip(tooltip)
             button.setAccessibleName(tooltip)
 
-        configure_button(new_game_button, "new-game.png", "New Game")
-        configure_button(undo_button, "undo.png", "Undo")
-        configure_button(hint_button, "hint.png", "Hint")
-        configure_button(draw_stock_button, "draw-stock.png", "Draw or Recycle Stock")
+        configure_button(self.new_game_button, "new-game.png", "New Game")
+        configure_button(self.undo_button, "undo.png", "Undo")
+        configure_button(self.hint_button, "hint.png", "Hint")
+        configure_button(self.draw_stock_button, "draw-stock.png", "Draw or Recycle Stock")
 
-        bottom_bar_layout.addWidget(new_game_button)
-        bottom_bar_layout.addWidget(undo_button)
-        bottom_bar_layout.addWidget(hint_button)
+        self.auto_finish_button.setStyleSheet(button_style)
+        self.auto_finish_button.setToolTip("Auto Finish")
+        self.auto_finish_button.setAccessibleName("Auto Finish")
+        self.auto_finish_button.hide()
+
+        bottom_bar_layout.addWidget(self.new_game_button)
+        bottom_bar_layout.addWidget(self.undo_button)
+        bottom_bar_layout.addWidget(self.hint_button)
+        bottom_bar_layout.addWidget(self.auto_finish_button)
         bottom_bar_layout.addStretch()
-        bottom_bar_layout.addWidget(draw_stock_button)
+        bottom_bar_layout.addWidget(self.draw_stock_button)
 
         parent_layout.addWidget(bottom_bar_widget)
 
-        new_game_button.clicked.connect(self.controller.new_game)
-        undo_button.clicked.connect(self.controller.on_undo_clicked)
-        hint_button.clicked.connect(self.controller.on_hint_clicked)
-        draw_stock_button.clicked.connect(self.controller.on_stock_clicked)
+        self.new_game_button.clicked.connect(self.controller.new_game)
+        self.undo_button.clicked.connect(self.controller.on_undo_clicked)
+        self.hint_button.clicked.connect(self.controller.on_hint_clicked)
+        self.auto_finish_button.clicked.connect(self.controller.on_auto_finish_clicked)
+        self.draw_stock_button.clicked.connect(self.controller.on_stock_clicked)
 
     def _scene_mouse_press_wrapper(self, original_handler):
         # Wrap the scene's mousePressEvent to detect clicks on stock placeholder
         def handler(event):
+            if self.controller._auto_finishing:
+                event.accept()
+                return
             if self.controller.stock and self.controller.stock.placeholder.sceneBoundingRect().contains(event.scenePos()):
                 self.controller.on_stock_clicked()
                 event.accept()
