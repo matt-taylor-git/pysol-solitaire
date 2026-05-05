@@ -41,6 +41,11 @@ A complete implementation of the classic Klondike Solitaire card game using Pyth
 
 ## Running the Game
 
+Use the launcher script:
+```bash
+./run.sh
+```
+
 With the virtual environment activated:
 ```bash
 python main.py
