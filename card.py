@@ -206,8 +206,8 @@ class CardItem(QGraphicsObject):
         top_pos = self.pos()
         self._group_offsets = [c.pos() - top_pos for c in group]
 
-        # Bring group to front
-        base_z = 1000.0
+        # Bring the active drag group above all normal pile ordering.
+        base_z = 10000.0
         for i, c in enumerate(group):
             c.setZValue(base_z + i)
 

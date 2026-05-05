@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -7,20 +9,16 @@ from PySide6.QtWidgets import (
     QPushButton,
     QGraphicsView,
     QGraphicsScene,
-    QStyle,
 )
 from PySide6.QtGui import (
     QColor,
     QPalette,
-    QPen,
     QIcon,
 )
 from PySide6.QtCore import (
     Qt,
-    QPointF,
+    QSize,
 )
-
-from constants import PLACEHOLDER_PEN, PLACEHOLDER_BRUSH, SELECTION_HALO_PEN
 
 
 class SolitaireWindow(QMainWindow):
@@ -105,10 +103,10 @@ class SolitaireWindow(QMainWindow):
                 background-color: rgba(255, 255, 255, 0.12);
                 color: white;
                 font-size: 16px;
-                padding: 16px;
+                padding: 10px;
                 border: 1px solid rgba(255, 255, 255, 0.3);
                 border-radius: 8px;
-                icon-size: 32px;
+                icon-size: 60px;
                 min-width: 64px;
                 min-height: 64px;
             }
@@ -124,46 +122,35 @@ class SolitaireWindow(QMainWindow):
 
         undo_button = QPushButton()
         hint_button = QPushButton()
-        shuffle_button = QPushButton()
-        daily_button = QPushButton()
-        settings_button = QPushButton()
-        play_button = QPushButton()
+        new_game_button = QPushButton()
+        draw_stock_button = QPushButton()
 
-        for b in [undo_button, hint_button, shuffle_button, daily_button, settings_button, play_button]:
-            b.setStyleSheet(button_style)
+        icons_dir = Path(__file__).resolve().parent / "assets" / "icons"
 
-        # Add icons from Qt standard pixmaps and tooltips
-        undo_button.setIcon(self.style().standardIcon(QStyle.SP_ArrowBack))
-        undo_button.setToolTip("Undo")
-        hint_button.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxQuestion))
-        hint_button.setToolTip("Hint")
-        shuffle_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        shuffle_button.setToolTip("Shuffle")
-        daily_button.setIcon(self.style().standardIcon(QStyle.SP_FileLinkIcon))
-        daily_button.setToolTip("Daily")
-        settings_button.setIcon(self.style().standardIcon(QStyle.SP_CommandLink))
-        settings_button.setToolTip("Debug: Force Win")
-        play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-        play_button.setToolTip("Play")
+        def configure_button(button, icon_name, tooltip):
+            button.setStyleSheet(button_style)
+            button.setIcon(QIcon(str(icons_dir / icon_name)))
+            button.setIconSize(QSize(60, 60))
+            button.setToolTip(tooltip)
+            button.setAccessibleName(tooltip)
 
+        configure_button(new_game_button, "new-game.png", "New Game")
+        configure_button(undo_button, "undo.png", "Undo")
+        configure_button(hint_button, "hint.png", "Hint")
+        configure_button(draw_stock_button, "draw-stock.png", "Draw or Recycle Stock")
+
+        bottom_bar_layout.addWidget(new_game_button)
         bottom_bar_layout.addWidget(undo_button)
         bottom_bar_layout.addWidget(hint_button)
-        bottom_bar_layout.addWidget(shuffle_button)
         bottom_bar_layout.addStretch()
-        bottom_bar_layout.addWidget(daily_button)
-        bottom_bar_layout.addWidget(settings_button)
-        bottom_bar_layout.addWidget(play_button)
+        bottom_bar_layout.addWidget(draw_stock_button)
 
         parent_layout.addWidget(bottom_bar_widget)
 
-        # Wire up Phase 1 behaviors
-        shuffle_button.clicked.connect(self.controller.on_shuffle_clicked)
-        play_button.clicked.connect(self.controller.on_play_clicked)
-        # Placeholders for future logic
-        undo_button.clicked.connect(lambda: None)
-        hint_button.clicked.connect(lambda: None)
-        daily_button.clicked.connect(lambda: None)
-        settings_button.clicked.connect(self.controller.on_force_win_clicked)
+        new_game_button.clicked.connect(self.controller.new_game)
+        undo_button.clicked.connect(self.controller.on_undo_clicked)
+        hint_button.clicked.connect(self.controller.on_hint_clicked)
+        draw_stock_button.clicked.connect(self.controller.on_stock_clicked)
 
     def _scene_mouse_press_wrapper(self, original_handler):
         # Wrap the scene's mousePressEvent to detect clicks on stock placeholder

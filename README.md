@@ -64,7 +64,7 @@ Klondike Solitaire rules:
 
 - **Drag and drop** cards with mouse
 - Click stock to draw cards
-- Use buttons for New Game, Undo, Hint, Settings
+- Use buttons for New Game, Undo, Hint, and Draw/Recycle Stock
 
 ## Project Structure
 

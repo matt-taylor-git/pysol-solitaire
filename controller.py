@@ -1,6 +1,6 @@
 import os
 import random
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import QGraphicsView, QGraphicsTextItem
 from PySide6.QtCore import (
@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     QSequentialAnimationGroup,
     QEasingCurve,
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import QPainter, QFont
 
@@ -49,6 +50,10 @@ class GameController(QObject):
         self.deck: List[CardItem] = []  # undealt cards
         self._win_animation: Optional[QPropertyAnimation] = None
         self._win_text_item: Optional[QGraphicsTextItem] = None
+        self._undo_stack: List[Dict[str, Any]] = []
+        self._move_count = 0
+        self._hint_cards: List[CardItem] = []
+        self._hint_piles: List[Pile] = []
         self._wire_view_resize()
 
     def _wire_view_resize(self):
@@ -93,6 +98,8 @@ class GameController(QObject):
         self.card_height = self.card_width * CARD_ASPECT
 
     def clear_scene(self):
+        self._clear_hint_highlight()
+
         # Stop win animation and remove text
         if self._win_animation:
             self._win_animation.stop()
@@ -280,6 +287,8 @@ class GameController(QObject):
         print("DEBUG: Starting new game...")
         print("DEBUG: ====================")
         self.clear_scene()
+        self._undo_stack.clear()
+        self._set_move_count(0)
         self.won = False
         self.setup_piles()
         self.build_deck()
@@ -375,28 +384,36 @@ class GameController(QObject):
         if not group:
             # Not actually draggable; revert
             self._animate_revert([card], [card.pos()])
+            self._animate_layout([src_pile])
             return
 
         # Find best target pile under drop point
         target = self._find_target_pile(scene_pos, prefer_tableau=True)
 
         # Validate drop
-        can_drop = target and self._can_stack_on(group[0], target)
+        can_drop = (
+            target
+            and self._can_stack_on(group[0], target)
+            and not (target.kind == "foundation" and len(group) > 1)
+        )
 
         if can_drop:
+            snapshot = self._make_undo_snapshot()
             # Temporarily detach from source pile
             old_group = src_pile.remove_cards_from(card)
             # Accept drop
             target.add_cards(old_group)
             self._animate_layout([src_pile, target])
-            print(f"DEBUG: Accepted drop to {target.kind}, calling check_win")
-            self.check_win()
             # Auto-flip new top card of a tableau if it was face-down
             if src_pile.kind == "tableau" and src_pile.top_card() and not src_pile.top_card().is_face_up():
                 src_pile.top_card().set_face_up(True)
+            self._register_move(snapshot)
+            print(f"DEBUG: Accepted drop to {target.kind}, calling check_win")
+            self.check_win()
         else:
             # Revert
             self._animate_revert(group, start_positions)
+            self._animate_layout([src_pile])
 
 
     def _find_target_pile(self, pt: QPointF, prefer_tableau=True) -> Optional[Pile]:
@@ -489,6 +506,115 @@ class GameController(QObject):
 
     # ---------------- Button hooks ----------------
 
+    def _make_undo_snapshot(self) -> Dict[str, Any]:
+        cards = self._all_cards()
+        return {
+            "pile_cards": [(p, list(p.cards)) for p in self.all_piles if p is not None],
+            "face_up": {c: c.is_face_up() for c in cards},
+            "move_count": self._move_count,
+            "won": self.won,
+        }
+
+    def _restore_snapshot(self, snapshot: Dict[str, Any]):
+        self._clear_hint_highlight()
+
+        if not snapshot["won"] and self._win_text_item:
+            if self._win_animation:
+                self._win_animation.stop()
+                self._win_animation = None
+            self.scene.removeItem(self._win_text_item)
+            self._win_text_item = None
+
+        for pile, cards in snapshot["pile_cards"]:
+            pile.cards = list(cards)
+            for card in pile.cards:
+                card.current_pile = pile
+
+        for card, face_up in snapshot["face_up"].items():
+            card.set_face_up(face_up)
+
+        self.won = snapshot["won"]
+        self._set_move_count(snapshot["move_count"])
+        self._animate_layout([p for p in self.all_piles if p is not None])
+        self.check_win()
+
+    def _register_move(self, snapshot: Dict[str, Any]):
+        self._undo_stack.append(snapshot)
+        if len(self._undo_stack) > 100:
+            self._undo_stack.pop(0)
+        self._set_move_count(self._move_count + 1)
+
+    def _set_move_count(self, value: int):
+        self._move_count = max(0, value)
+        if hasattr(self.window, "moves_label"):
+            self.window.moves_label.setText(f"Moves: {self._move_count}")
+
+    def _all_cards(self) -> List[CardItem]:
+        cards: List[CardItem] = []
+        for pile in self.all_piles:
+            if pile:
+                cards.extend(pile.cards)
+        return cards
+
+    def _clear_hint_highlight(self):
+        for card in self._hint_cards:
+            card.setOpacity(1.0)
+        for pile in self._hint_piles:
+            pile.placeholder.set_highlighted(False)
+        self._hint_cards = []
+        self._hint_piles = []
+
+    def _highlight_hint(self, source_cards: List[CardItem], target_pile: Optional[Pile], message: str):
+        self._clear_hint_highlight()
+        self._hint_cards = list(source_cards)
+        self._hint_piles = [target_pile] if target_pile else []
+
+        for card in self._hint_cards:
+            card.setOpacity(0.7)
+        for pile in self._hint_piles:
+            pile.placeholder.set_highlighted(True)
+
+        self.window.statusBar().showMessage(message, 2200)
+        QTimer.singleShot(1800, self._clear_hint_highlight)
+
+    def _legal_foundation_hint(self):
+        sources = []
+        if self.waste and self.waste.top_card():
+            sources.append(self.waste.top_card())
+        sources.extend(t.top_card() for t in self.tableau if t.top_card() and t.top_card().is_face_up())
+
+        for card in sources:
+            for foundation in self.foundations:
+                if self._can_stack_on(card, foundation):
+                    return [card], foundation, "Hint: move this card to a foundation."
+        return None
+
+    def _legal_tableau_hint(self):
+        for source_pile in self.tableau:
+            for card in source_pile.cards:
+                group = self.get_draggable_group_for(card)
+                if not group:
+                    continue
+                for target in self.tableau:
+                    if target is source_pile:
+                        continue
+                    if self._can_stack_on(group[0], target):
+                        return group, target, "Hint: move this stack to the highlighted tableau."
+
+        if self.waste and self.waste.top_card():
+            waste_card = self.waste.top_card()
+            for target in self.tableau:
+                if self._can_stack_on(waste_card, target):
+                    return [waste_card], target, "Hint: move the waste card to the highlighted tableau."
+        return None
+
+    def _stock_hint(self):
+        if self.stock and self.stock.cards:
+            return [], self.stock, "Hint: draw from the stock."
+        if self.stock and self.waste and self.waste.cards:
+            return [], self.stock, "Hint: recycle the waste pile back to stock."
+        return None
+
     def on_shuffle_clicked(self):
         self.new_game()
 
@@ -496,11 +622,27 @@ class GameController(QObject):
         # Alias for new game in Phase 1
         self.new_game()
 
+    def on_undo_clicked(self):
+        if not self._undo_stack:
+            self.window.statusBar().showMessage("Nothing to undo.", 1800)
+            return
+        snapshot = self._undo_stack.pop()
+        self._restore_snapshot(snapshot)
+
+    def on_hint_clicked(self):
+        hint = self._legal_foundation_hint() or self._legal_tableau_hint() or self._stock_hint()
+        if hint:
+            cards, target, message = hint
+            self._highlight_hint(cards, target, message)
+        else:
+            self.window.statusBar().showMessage("No legal moves found.", 1800)
+
     def on_stock_clicked(self):
         # Draw one from stock to waste with flip animation (Phase 1)
         if not self.stock or not self.stock.cards:
             # If stock empty, recycle waste back to stock face-down (Phase 1 UX)
             if self.waste and self.waste.cards:
+                snapshot = self._make_undo_snapshot()
                 moving = list(reversed(self.waste.cards))
                 self.waste.cards.clear()
                 for c in moving:
@@ -508,15 +650,18 @@ class GameController(QObject):
                     c.current_pile = self.stock
                 self.stock.add_cards(moving)
                 self._animate_layout([self.stock, self.waste])
+                self._register_move(snapshot)
                 self.check_win()
             return
 
+        snapshot = self._make_undo_snapshot()
         card = self.stock.cards.pop()  # take top visually
         card.current_pile = self.waste
         # Move to waste
         self.waste.add_cards([card])
         card.set_face_up(True)
         self._animate_layout([self.stock, self.waste])
+        self._register_move(snapshot)
         self.check_win()
 
     def on_force_win_clicked(self):
