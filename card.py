@@ -41,6 +41,8 @@ class CardItem(QGraphicsObject):
     """
     # Emitted when a drag finishes: (card, dropScenePos, startPositions)
     dragReleased = Signal(object, QPointF, list)
+    # Emitted when a card is double-clicked to try an auto foundation move
+    doubleClickedToFoundation = Signal(object)
 
     def __init__(self, suit: str, rank: str, front_svg: str, controller: "GameController", face_up=False):
         super().__init__()
@@ -247,4 +249,15 @@ class CardItem(QGraphicsObject):
         # Delegate drop resolution to controller
         self.dragReleased.emit(self, event.scenePos(), self._start_positions)
         # Controller will animate cards to proper pile or revert
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return super().mouseDoubleClickEvent(event)
+        if not self.is_face_up():
+            return
+        # Only act if this card is the top card of its pile
+        pile = self.current_pile
+        if pile and pile.cards and pile.cards[-1] is self:
+            self.doubleClickedToFoundation.emit(self)
         event.accept()

@@ -231,6 +231,7 @@ class GameController(QObject):
                 c.set_size(self.card_width)
                 c.setPos(self.stock.anchor)  # start at stock for deal animation origin
                 c.dragReleased.connect(self.on_card_drag_released)
+                c.doubleClickedToFoundation.connect(self.handle_double_click_to_foundation)
                 self.scene.addItem(c)
                 self.deck.append(c)
 
@@ -380,6 +381,43 @@ class GameController(QObject):
                 return (bottom_card.suit == top_card.suit and
                         RANKS.index(bottom_card.rank) == RANKS.index(top_card.rank) + 1)
         return False
+
+    def handle_double_click_to_foundation(self, card: CardItem):
+        """
+        Handle double-click on a card to automatically move it to a legal foundation pile.
+        Only acts if the card is face-up and is the top card of its pile.
+        """
+        if self._auto_finishing:
+            return
+
+        pile = card.current_pile
+        if pile is None:
+            return
+
+        # Only top card of a pile may auto-move
+        if not pile.cards or pile.cards[-1] is not card:
+            return
+
+        # Find a legal foundation move
+        target = None
+        for foundation in self.foundations:
+            if self._can_stack_on(card, foundation):
+                target = foundation
+                break
+
+        if target is None:
+            return
+
+        snapshot = self._make_undo_snapshot()
+        pile.cards.pop()
+        target.add_cards([card])
+        self._animate_layout([pile, target])
+        # Auto-flip new top card of a tableau if it was face-down
+        if pile.kind == "tableau" and pile.top_card() and not pile.top_card().is_face_up():
+            pile.top_card().set_face_up(True)
+        self._register_move(snapshot)
+        self.check_win()
+        self.update_auto_finish_button()
 
     def on_card_drag_released(self, card: CardItem, scene_pos: QPointF, start_positions: List[QPointF]):
         """
